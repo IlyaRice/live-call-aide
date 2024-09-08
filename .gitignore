@@ -1,2 +1,9 @@
+# Ignore the 'venv' folder and its contents
+venv/
+
 # Ignore the 'data' folder and its contents
 data/
+
+live-call-aide.code-workspace
+
+myenv\Scripts\activate
