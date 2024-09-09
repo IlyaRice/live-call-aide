@@ -3,6 +3,7 @@ import wave
 import os
 import threading
 import queue
+import tkinter as tk
 
 # Set the audio parameters
 FORMAT = pyaudio.paInt16
@@ -35,7 +36,7 @@ def record_audio():
                         rate=RATE, input=True,
                         frames_per_buffer=CHUNK)
 
-    print("Recording started. Press 'stop' to stop recording.")
+    print("Recording started.")
 
     while recording:
         # Read audio data from the microphone
@@ -78,16 +79,24 @@ def save_audio():
 
     print(f"Audio saved as {filename}")
 
+def stop_recording():
+    global recording
+    recording = False
+
+# Create the main window
+window = tk.Tk()
+window.title("Rolling Window Recording")
+
+# Create the "Stop" button
+stop_button = tk.Button(window, text="Stop", command=stop_recording)
+stop_button.pack(pady=10)
+
 # Start the recording thread
 recording_thread = threading.Thread(target=record_audio)
 recording_thread.start()
 
-# Wait for the 'stop' command
-while True:
-    command = input().lower()
-    if command == 'stop':
-        recording = False
-        break
+# Run the GUI event loop
+window.mainloop()
 
 # Wait for the recording thread to finish
 recording_thread.join()
