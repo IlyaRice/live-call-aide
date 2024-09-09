@@ -5,14 +5,14 @@ import threading
 import queue
 import customtkinter as ctk
 from openai import OpenAI
-from prompts import whisper_prompt
+from prompts import whisper_prompt, gpt_system_prompt
 
 # Set the audio parameters
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
 CHUNK = 1024
-RECORD_SECONDS = 5
+RECORD_SECONDS = 30
 
 # Set the data directory
 DATA_DIR = "data"
@@ -87,7 +87,7 @@ def stop_recording():
     global recording
     recording = False
 
-def transcribe_audio():
+def transcribe_audio(transcript_textbox):
     # Get the latest recorded audio file
     audio_file_path = os.path.join(DATA_DIR, "recording.wav")
 
@@ -105,16 +105,37 @@ def transcribe_audio():
         prompt=whisper_prompt,  # Guiding prompt for transcription
         temperature=0.2
     )
-
-    # Get the transcribed text
+    
     transcribed_text = transcript.text
-
+    
     # Display the transcribed text in the transcript textbox
     transcript_textbox.delete("1.0", ctk.END)
     transcript_textbox.insert("1.0", transcribed_text)
+    
+def ask_gpt(prompt, transcribed_text, response_textbox):
+    # Create an OpenAI client
+    client = OpenAI()
+
+    # Send the transcription to ChatGPT
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": transcribed_text}
+        ]
+    )
+
+    # Get the ChatGPT response
+    gpt_answer = completion.choices[0].message.content
+
+    # Display the GPT response in the response textbox
+    response_textbox.delete("1.0", ctk.END)
+    response_textbox.insert("1.0", gpt_answer)
+
+    return gpt_answer
 
 def create_ui_components(root):
-    global transcript_textbox
+    global transcript_textbox, response_textbox
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
 
@@ -124,17 +145,27 @@ def create_ui_components(root):
 
     font_size = 20
 
-    transcript_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", font_size), text_color='#FFFCF2', wrap="word")
+    # Configure grid weights for adaptive resizing
+    root.grid_rowconfigure(0, weight=8)
+    root.grid_rowconfigure(1, weight=1)
+    root.grid_rowconfigure(2, weight=1)
+    root.grid_columnconfigure(0, weight=35)
+    root.grid_columnconfigure(1, weight=65)
+
+    transcript_textbox = ctk.CTkTextbox(root, font=("Arial", font_size), text_color='#FFFCF2', wrap="word")
     transcript_textbox.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
 
-    response_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", font_size), text_color='#639cdc', wrap="word")
+    response_textbox = ctk.CTkTextbox(root, font=("Arial", font_size), text_color='#639cdc', wrap="word")
     response_textbox.grid(row=0, column=1, padx=10, pady=20, sticky="nsew")
 
     freeze_button = ctk.CTkButton(root, text="Stop", command=stop_recording)
     freeze_button.grid(row=1, column=1, padx=10, pady=3, sticky="nsew")
 
-    transcript_button = ctk.CTkButton(root, text="Transcript", command=transcribe_audio)
+    transcript_button = ctk.CTkButton(root, text="Transcribe", command=lambda: transcribe_audio(transcript_textbox))
     transcript_button.grid(row=1, column=0, padx=10, pady=3, sticky="nsew")
+
+    ask_gpt_button = ctk.CTkButton(root, text="Ask GPT", command=lambda: ask_gpt(gpt_system_prompt, transcript_textbox.get("1.0", ctk.END), response_textbox))
+    ask_gpt_button.grid(row=2, column=0, padx=10, pady=3, sticky="nsew")
 
 # Create the main window
 root = ctk.CTk()
