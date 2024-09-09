@@ -3,7 +3,7 @@ import wave
 import os
 import threading
 import queue
-import tkinter as tk
+import customtkinter as ctk
 
 # Set the audio parameters
 FORMAT = pyaudio.paInt16
@@ -83,20 +83,38 @@ def stop_recording():
     global recording
     recording = False
 
-# Create the main window
-window = tk.Tk()
-window.title("Rolling Window Recording")
+def create_ui_components(root):
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("dark-blue")
 
-# Create the "Stop" button
-stop_button = tk.Button(window, text="Stop", command=stop_recording)
-stop_button.pack(pady=10)
+    root.title("Live Call Aide")
+    root.configure(bg='#252422')
+    root.geometry("1000x600")
+
+    font_size = 20
+
+    transcript_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", font_size), text_color='#FFFCF2', wrap="word")
+    transcript_textbox.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
+
+    response_textbox = ctk.CTkTextbox(root, width=300, font=("Arial", font_size), text_color='#639cdc', wrap="word")
+    response_textbox.grid(row=0, column=1, padx=10, pady=20, sticky="nsew")
+
+    freeze_button = ctk.CTkButton(root, text="Stop", command=stop_recording)
+    freeze_button.grid(row=1, column=1, padx=10, pady=3, sticky="nsew")
+
+# Create the main window
+root = ctk.CTk()
+
+# Create the UI components
+create_ui_components(root)
 
 # Start the recording thread
 recording_thread = threading.Thread(target=record_audio)
 recording_thread.start()
 
 # Run the GUI event loop
-window.mainloop()
+root.mainloop()
 
 # Wait for the recording thread to finish
 recording_thread.join()
+
