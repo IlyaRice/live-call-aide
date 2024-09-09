@@ -1,8 +1,9 @@
 import pyaudio
 import wave
 import os
+import time
 import threading
-import queue
+from collections import deque
 import customtkinter as ctk
 from openai import OpenAI
 from prompts import whisper_prompt, gpt_system_prompt
@@ -12,7 +13,7 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
 CHUNK = 1024
-RECORD_SECONDS = 30
+RECORD_SECONDS = 60
 
 # Set the data directory
 DATA_DIR = "data"
@@ -20,18 +21,16 @@ DATA_DIR = "data"
 # Create the data directory if it doesn't exist
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
-    
-# Create a queue to store the audio data
-audio_queue = queue.Queue()
-
+# Create a deque to store the audio data with a maximum size
+max_audio_frames = int(RATE / CHUNK * RECORD_SECONDS)
+audio_deque = deque(maxlen=max_audio_frames)
 # Flag to indicate recording status
 recording = True
 
 # Global variable for transcript textbox
 transcript_textbox = None
-def record_audio():
-    global recording
 
+def record_audio(stop_event):
     # Create a PyAudio object
     audio = pyaudio.PyAudio()
 
@@ -42,16 +41,16 @@ def record_audio():
 
     print("Recording started.")
 
-    while recording:
+    while not stop_event.is_set():
         # Read audio data from the microphone
         data = stream.read(CHUNK)
 
-        # Add the audio data to the queue
-        audio_queue.put(data)
+        # Add the audio data to the deque
+        audio_deque.append(data)
 
-        # If the queue size exceeds the desired recording duration, remove the oldest data
-        if audio_queue.qsize() > RATE / CHUNK * RECORD_SECONDS:
-            audio_queue.get()
+        # If the deque size exceeds the desired recording duration, remove the oldest data
+        if len(audio_deque) > max_audio_frames:
+            audio_deque.popleft()
 
     print("Recording stopped.")
 
@@ -60,23 +59,19 @@ def record_audio():
     stream.close()
     audio.terminate()
 
-    # Save the recorded audio to a file
-    save_audio()
-
-def save_audio():
-    # Create a unique filename for the audio file
-    filename = os.path.join(DATA_DIR, "recording.wav")
+def save_audio(filename):
+    # Create the file path for the audio file
+    file_path = os.path.join(DATA_DIR, filename)
 
     # Create a new wave file
-    wf = wave.open(filename, 'wb')
+    wf = wave.open(file_path, 'wb')
     wf.setnchannels(CHANNELS)
     wf.setsampwidth(pyaudio.get_sample_size(FORMAT))
     wf.setframerate(RATE)
 
-    # Write the audio data from the queue to the file
-    while not audio_queue.empty():
-        data = audio_queue.get()
-        wf.writeframes(data)
+    # Write the audio data from the deque to the file
+    audio_data = list(audio_deque)
+    wf.writeframes(b''.join(audio_data))
 
     # Close the wave file
     wf.close()
@@ -88,8 +83,15 @@ def stop_recording():
     recording = False
 
 def transcribe_audio(transcript_textbox):
-    # Get the latest recorded audio file
-    audio_file_path = os.path.join(DATA_DIR, "recording.wav")
+    # Generate a unique filename for the audio file
+    filename = f"recording_{time.strftime('%d.%m.%y %H.%M.%S')}.wav"
+    
+    # Save the current rolling window audio
+    save_audio(filename)
+    print(f"Audio saved as {filename}")
+    
+    # Get the saved audio file path
+    audio_file_path = os.path.join(DATA_DIR, filename)
 
     # Open the audio file
     audio_file = open(audio_file_path, "rb")
@@ -98,6 +100,7 @@ def transcribe_audio(transcript_textbox):
     client = OpenAI()
 
     # Transcribe the audio using the Whisper API
+    print(f"Sending audio to Whisper for transcription...")
     transcript = client.audio.transcriptions.create(
         model="whisper-1",
         file=audio_file,
@@ -143,14 +146,14 @@ def create_ui_components(root):
     root.configure(bg='#252422')
     root.geometry("1000x600")
 
-    font_size = 20
+    font_size = 15
 
     # Configure grid weights for adaptive resizing
     root.grid_rowconfigure(0, weight=8)
     root.grid_rowconfigure(1, weight=1)
     root.grid_rowconfigure(2, weight=1)
-    root.grid_columnconfigure(0, weight=35)
-    root.grid_columnconfigure(1, weight=65)
+    root.grid_columnconfigure(0, weight=25)
+    root.grid_columnconfigure(1, weight=75)
 
     transcript_textbox = ctk.CTkTextbox(root, font=("Arial", font_size), text_color='#FFFCF2', wrap="word")
     transcript_textbox.grid(row=0, column=0, padx=10, pady=20, sticky="nsew")
@@ -158,7 +161,7 @@ def create_ui_components(root):
     response_textbox = ctk.CTkTextbox(root, font=("Arial", font_size), text_color='#639cdc', wrap="word")
     response_textbox.grid(row=0, column=1, padx=10, pady=20, sticky="nsew")
 
-    freeze_button = ctk.CTkButton(root, text="Stop", command=stop_recording)
+    freeze_button = ctk.CTkButton(root, text="Save", command=lambda: save_audio(f"recording_{time.strftime('%d.%m.%y %H.%M.%S')}.wav"))
     freeze_button.grid(row=1, column=1, padx=10, pady=3, sticky="nsew")
 
     transcript_button = ctk.CTkButton(root, text="Transcribe", command=lambda: transcribe_audio(transcript_textbox))
@@ -173,11 +176,15 @@ root = ctk.CTk()
 # Create the UI components
 create_ui_components(root)
 
+# Create a stop event
+stop_event = threading.Event()
+
 # Start the recording thread
-recording_thread = threading.Thread(target=record_audio)
+recording_thread = threading.Thread(target=record_audio, args=(stop_event,))
 recording_thread.start()
 
 # Run the GUI event loop
+root.protocol("WM_DELETE_WINDOW", lambda: (stop_event.set(), root.destroy()))
 root.mainloop()
 
 # Wait for the recording thread to finish
