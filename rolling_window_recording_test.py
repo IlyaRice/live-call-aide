@@ -4,6 +4,8 @@ import os
 import threading
 import queue
 import customtkinter as ctk
+from openai import OpenAI
+from prompts import whisper_prompt
 
 # Set the audio parameters
 FORMAT = pyaudio.paInt16
@@ -18,13 +20,15 @@ DATA_DIR = "data"
 # Create the data directory if it doesn't exist
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
-
+    
 # Create a queue to store the audio data
 audio_queue = queue.Queue()
 
 # Flag to indicate recording status
 recording = True
 
+# Global variable for transcript textbox
+transcript_textbox = None
 def record_audio():
     global recording
 
@@ -83,7 +87,34 @@ def stop_recording():
     global recording
     recording = False
 
+def transcribe_audio():
+    # Get the latest recorded audio file
+    audio_file_path = os.path.join(DATA_DIR, "recording.wav")
+
+    # Open the audio file
+    audio_file = open(audio_file_path, "rb")
+
+    # Create an OpenAI client
+    client = OpenAI()
+
+    # Transcribe the audio using the Whisper API
+    transcript = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_file,
+        language="ru",  # Russian language (ISO-639-1 format)
+        prompt=whisper_prompt,  # Guiding prompt for transcription
+        temperature=0.2
+    )
+
+    # Get the transcribed text
+    transcribed_text = transcript.text
+
+    # Display the transcribed text in the transcript textbox
+    transcript_textbox.delete("1.0", ctk.END)
+    transcript_textbox.insert("1.0", transcribed_text)
+
 def create_ui_components(root):
+    global transcript_textbox
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
 
@@ -102,6 +133,9 @@ def create_ui_components(root):
     freeze_button = ctk.CTkButton(root, text="Stop", command=stop_recording)
     freeze_button.grid(row=1, column=1, padx=10, pady=3, sticky="nsew")
 
+    transcript_button = ctk.CTkButton(root, text="Transcript", command=transcribe_audio)
+    transcript_button.grid(row=1, column=0, padx=10, pady=3, sticky="nsew")
+
 # Create the main window
 root = ctk.CTk()
 
@@ -117,4 +151,3 @@ root.mainloop()
 
 # Wait for the recording thread to finish
 recording_thread.join()
-
