@@ -4,6 +4,9 @@ venv/
 # Ignore the 'data' folder and its contents
 data/
 
+# Ignore the '__pycache__' folder and its contents
+__pycache__/
+
 live-call-aide.code-workspace
 
 myenv\Scripts\activate
